@@ -1,0 +1,112 @@
+Project concert_reservation {
+  database_type: "MySQL"
+  Note: "콘서트 예약 서비스 ERD"
+}
+
+/**
+ * 사용자 포인트
+ * - 결제 시 차감, 충전 시 증가
+ * - 사용자(User)는 외부 인증/회원 시스템에서 관리된다고 가정
+ */
+Table user_point {
+  user_id varchar(64) [pk, note: "사용자 ID"]
+  balance bigint [not null, default: 0, note: "포인트 잔액"]
+  version bigint [not null, default: 0, note: "낙관적 락(Optimistic Lock)"]
+  created_at timestamp [not null, note: "생성 시각"]
+  updated_at timestamp [not null, note: "수정 시각"]
+}
+
+/**
+ * 콘서트
+ */
+Table concert {
+  id bigint [pk, increment]
+  title varchar(200) [not null, note: "콘서트 제목"]
+  created_at timestamp [not null, note: "생성 시각"]
+  updated_at timestamp [not null, note: "수정 시각"]
+}
+
+/**
+ * 콘서트 날짜(회차)
+ * - 하나의 콘서트는 여러 날짜/회차를 가질 수 있음
+ */
+Table concert_date {
+  id bigint [pk, increment]
+  concert_id bigint [not null, ref: > concert.id]
+  date date [not null, note: "공연 날짜"]
+  created_at timestamp [not null, note: "생성 시각"]
+  updated_at timestamp [not null, note: "수정 시각"]
+
+  Indexes {
+    (concert_id, date) [unique, name: "uk_concert_date"]
+  }
+}
+
+/**
+ * 좌석
+ * - 좌석 번호는 1~50
+ * - status:
+ *   AVAILABLE : 예약 가능
+ *   HELD      : 임시 배정
+ *   CONFIRMED : 결제 완료
+ */
+Table seat {
+  id bigint [pk, increment]
+  concert_date_id bigint [not null, ref: > concert_date.id]
+  seat_no int [not null, note: "좌석 번호 (1~50)"]
+  status varchar(20) [not null, note: "AVAILABLE|HELD|CONFIRMED"]
+  held_by_user_id varchar(64) [note: "임시 배정 사용자 ID"]
+  hold_expires_at timestamp [note: "임시 배정 만료 시각"]
+  created_at timestamp [not null, note: "생성 시각"]
+  updated_at timestamp [not null, note: "수정 시각"]
+
+  Indexes {
+    (concert_date_id, seat_no) [unique, name: "uk_seat_date_seatno"]
+    (concert_date_id, status) [name: "idx_seat_date_status"]
+    (hold_expires_at) [name: "idx_seat_hold_expires"]
+  }
+}
+
+/**
+ * 예약
+ * - 좌석 임시 배정 시 생성
+ * - 결제 완료 시 PAID
+ * - 임시 배정 만료 시 EXPIRED
+ */
+Table reservation {
+  id bigint [pk, increment]
+  user_id varchar(64) [not null, note: "예약 사용자 ID"]
+  concert_date_id bigint [not null, ref: > concert_date.id]
+  seat_no int [not null, note: "좌석 번호 (1~50)"]
+  status varchar(20) [not null, note: "HELD|PAID|EXPIRED|CANCELED"]
+  price bigint [not null, default: 0, note: "결제 금액"]
+  held_at timestamp [not null, note: "임시 배정 시각"]
+  expires_at timestamp [not null, note: "임시 배정 만료 시각"]
+  created_at timestamp [not null, note: "생성 시각"]
+  updated_at timestamp [not null, note: "수정 시각"]
+
+  Indexes {
+    (user_id, status) [name: "idx_reservation_user_status"]
+    (concert_date_id, seat_no) [name: "idx_reservation_date_seat"]
+    (expires_at) [name: "idx_reservation_expires"]
+  }
+}
+
+/**
+ * 결제
+ * - 하나의 예약(reservation)에 대해 하나의 결제
+ * - 결제 성공 시 좌석 CONFIRMED, 예약 PAID
+ */
+Table payment {
+  id bigint [pk, increment]
+  reservation_id bigint [not null, ref: > reservation.id]
+  user_id varchar(64) [not null, note: "결제 사용자 ID"]
+  amount bigint [not null, note: "결제 금액"]
+  paid_at timestamp [not null, note: ""]
+  created_at timestamp [not null, note: "생성 시각"]
+
+  Indexes {
+    (reservation_id) [unique, name: "uk_payment_reservation"]
+    (user_id, paid_at) [name: "idx_payment_user_paidat"]
+  }
+}

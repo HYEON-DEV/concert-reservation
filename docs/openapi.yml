@@ -1,0 +1,337 @@
+openapi: 3.0.3
+info:
+  title: Concert Reservation Service API
+  version: 1.0.0
+  description: |
+    콘서트 예약 서비스 API.
+    - 대기열 토큰 기반으로 활성 사용자만 예약/결제 가능
+    - 좌석 임시배정(HOLD) 5분 TTL, 미결제 시 자동 해제
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Queue
+    description: 대기열 토큰 발급/조회
+  - name: Concert
+    description: 콘서트 날짜/좌석 조회
+  - name: Reservation
+    description: 좌석 예약(임시배정)
+  - name: Point
+    description: 포인트 충전/조회
+  - name: Payment
+    description: 결제(포인트 차감 + 좌석 확정)
+
+paths:
+  /api/v1/queue/token:
+    post:
+      tags: [Queue]
+      summary: 대기열 토큰 발급
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueueTokenIssueRequest"
+      responses:
+        "201":
+          description: 토큰 발급 성공
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueTokenIssueResponse"
+
+  /api/v1/queue/status:
+    get:
+      tags: [Queue]
+      summary: 대기열 상태 조회
+      parameters:
+        - in: header
+          name: X-Queue-Token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueStatusResponse"
+
+  /api/v1/concerts/{concertId}/dates:
+    get:
+      tags: [Concert]
+      summary: 예약 가능한 날짜 목록 조회
+      parameters:
+        - in: path
+          name: concertId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConcertDatesResponse"
+
+  /api/v1/concert-dates/{concertDateId}/seats:
+    get:
+      tags: [Concert]
+      summary: 특정 날짜의 좌석 목록 조회(1~50)
+      parameters:
+        - in: path
+          name: concertDateId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatsResponse"
+
+  /api/v1/reservations:
+    post:
+      tags: [Reservation]
+      summary: 좌석 예약 요청(임시배정)
+      parameters:
+        - in: header
+          name: X-Queue-Token
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReservationCreateRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationCreateResponse"
+
+  /api/v1/users/{userId}/points:
+    get:
+      tags: [Point]
+      summary: 포인트 조회
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointBalanceResponse"
+
+  /api/v1/users/{userId}/points/charge:
+    post:
+      tags: [Point]
+      summary: 포인트 충전
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointChargeRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointChargeResponse"
+
+  /api/v1/payments:
+    post:
+      tags: [Payment]
+      summary: 결제 요청
+      parameters:
+        - in: header
+          name: X-Queue-Token
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentRequest"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResponse"
+
+components:
+  schemas:
+    QueueTokenIssueRequest:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          example: "user_1001"
+
+    QueueTokenIssueResponse:
+      type: object
+      required: [token, issuedAt]
+      properties:
+        token:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+
+    QueueStatusResponse:
+      type: object
+      required: [active, userId]
+      properties:
+        active:
+          type: boolean
+        position:
+          type: integer
+          nullable: true
+        userId:
+          type: string
+          example: "user_1001"
+
+    ConcertDatesResponse:
+      type: object
+      required: [concertId, dates]
+      properties:
+        concertId:
+          type: integer
+        dates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConcertDateItem"
+
+    ConcertDateItem:
+      type: object
+      required: [concertDateId, date]
+      properties:
+        concertDateId:
+          type: integer
+        date:
+          type: string
+          format: date
+
+    SeatsResponse:
+      type: object
+      required: [concertDateId, seats]
+      properties:
+        concertDateId:
+          type: integer
+        seats:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatItem"
+
+    SeatItem:
+      type: object
+      required: [seatNo, status]
+      properties:
+        seatNo:
+          type: integer
+        status:
+          type: string
+          enum: [AVAILABLE, HELD, CONFIRMED]
+        holdExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        heldByUserId:
+          type: string
+          nullable: true
+          example: "user_1001"
+
+    ReservationCreateRequest:
+      type: object
+      required: [userId, concertDateId, seatNo]
+      properties:
+        userId:
+          type: string
+          example: "user_1001"
+        concertDateId:
+          type: integer
+        seatNo:
+          type: integer
+
+    ReservationCreateResponse:
+      type: object
+      required: [reservationId, status, expiresAt]
+      properties:
+        reservationId:
+          type: integer
+        status:
+          type: string
+          enum: [HELD]
+        expiresAt:
+          type: string
+          format: date-time
+
+    PointBalanceResponse:
+      type: object
+      required: [userId, balance]
+      properties:
+        userId:
+          type: string
+          example: "user_1001"
+        balance:
+          type: integer
+
+    PointChargeRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: integer
+
+    PointChargeResponse:
+      type: object
+      required: [userId, balance]
+      properties:
+        userId:
+          type: string
+        balance:
+          type: integer
+
+    PaymentRequest:
+      type: object
+      required: [userId, reservationId]
+      properties:
+        userId:
+          type: string
+        reservationId:
+          type: integer
+
+    PaymentResponse:
+      type: object
+      required: [paymentId, reservationId, amount, paidAt]
+      properties:
+        paymentId:
+          type: integer
+        reservationId:
+          type: integer
+        amount:
+          type: integer
+        paidAt:
+          type: string
+          format: date-time

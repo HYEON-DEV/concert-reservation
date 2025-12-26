@@ -1,13 +1,15 @@
-## 프로젝트
+# 콘서트 예약 서비스  
 
-## Getting Started
+## 서버 설계 문서
+- [API Spec (OpenAPI 3.0)](/docs/openapi.yml)
+- [ERD (DBML)](/docs/erd.dbml)
+- [Infrastructure Diagram](/docs/infra.md)
 
-### Prerequisites
+## 시나리오
+- 유저는 외부 회원 시스템에서 관리된다고 가정한다.
+- 이 서비스는 userId를 전달받아 예약, 결제, 포인트 도메인을 책임진다.
+- 유저는 대기열 토큰을 발급받고, 활성화된 사용자만 예약/결제 API르 호출할 수 있다.
+- 콘서트 예약 가능 날짜를 조회하고, 특정 날짜의 좌석(1~50)을 조회할 수 있다.
+- 좌석 예약 요청 시 좌석은 임시 배정되며 5분 내 미결제 시 자동 해제된다.
+- 포인트 충전/조회가 가능하며, 결제 시 포인트 차감 미 좌석 소유권이 확정된다.
 
-#### Running Docker Containers
-
-`local` profile 로 실행하기 위하여 인프라가 설정되어 있는 Docker 컨테이너를 실행해주셔야 합니다.
-
-```bash
-docker-compose up -d
-```
