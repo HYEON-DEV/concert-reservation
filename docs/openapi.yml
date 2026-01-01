@@ -1,330 +1,514 @@
 openapi: 3.0.3
 info:
-  title: Concert Reservation Service API
+  title: Concert Reservation API
   version: 1.0.0
-  description: |
-    콘서트 예약 서비스 API.
-    - 대기열 토큰 기반으로 활성 사용자만 예약/결제 가능
-    - 좌석 임시배정(HOLD) 5분 TTL, 미결제 시 자동 해제
+  description: >
+    콘서트 예매 시스템 API 명세서.
+    대기열(Queue) 토큰과 사용자 인증 토큰을 활용하여 오픈 시점 트래픽을 제어하고
+    좌석 중복 예약을 방지한다.
+
 servers:
   - url: http://localhost:8080
 
 tags:
   - name: Queue
-    description: 대기열 토큰 발급/조회
+    description: 대기열 토큰 발급/순번 조회
   - name: Concert
-    description: 콘서트 날짜/좌석 조회
+    description: 콘서트/날짜 조회
+  - name: Seat
+    description: 좌석 조회/임시배정(HOLD)
   - name: Reservation
-    description: 좌석 예약(임시배정)
-  - name: Point
-    description: 포인트 충전/조회
+    description: 예약 생성/조회
   - name: Payment
-    description: 결제(포인트 차감 + 좌석 확정)
+    description: 결제 처리
+
+security:
+  - BearerAuth: []
 
 paths:
-  /api/v1/queue/token:
+  /queue/token:
     post:
       tags: [Queue]
-      summary: 대기열 토큰 발급
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/QueueTokenIssueRequest"
+      summary: 대기열 토큰 발급/재발급
+      description: >
+        대기열 통과 시 토큰을 발급한다.
+        토큰은 expiresAt까지 유효하며, 만료되면 무효화된다.
+        만료 후 재요청 시 정책에 따라 대기열에 다시 진입하거나 재발급된다.
+      security: []  # 로그인 전에도 대기열 토큰 발급이 가능하다는 가정(필요 시 BearerAuth로 변경)
       responses:
-        "201":
-          description: 토큰 발급 성공
+        "200":
+          description: Queue token issued
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/QueueTokenIssueResponse"
+                $ref: "#/components/schemas/QueueTokenResponse"
+              examples:
+                ok:
+                  value:
+                    token: "qtk_abc123"
+                    expiresAt: "2026-01-01T12:05:00Z"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
-  /api/v1/queue/status:
+  /queue/me:
     get:
       tags: [Queue]
-      summary: 대기열 상태 조회
-      parameters:
-        - in: header
-          name: X-Queue-Token
-          required: true
-          schema:
-            type: string
+      summary: 내 대기열 순번 조회
+      description: >
+        waiting ZSET 기준으로 내 순번을 반환한다.
+        active 상태인 경우(이미 통과) 남은 유효시간을 함께 반환할 수 있다.
+      security:
+        - QueueToken: []
       responses:
         "200":
+          description: OK
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueStatusResponse"
+              examples:
+                waiting:
+                  value:
+                    status: "WAITING"
+                    rank: 124
+                    estimatedWaitSeconds: 300
+                active:
+                  value:
+                    status: "ACTIVE"
+                    rank: 0
+                    activeExpiresAt: "2026-01-01T12:05:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/concerts/{concertId}/dates:
+  /concerts:
     get:
       tags: [Concert]
-      summary: 예약 가능한 날짜 목록 조회
-      parameters:
-        - in: path
-          name: concertId
-          required: true
-          schema:
-            type: integer
-            format: int64
+      summary: 콘서트 목록 조회
       responses:
         "200":
+          description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConcertDatesResponse"
+                $ref: "#/components/schemas/ConcertListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
-  /api/v1/concert-dates/{concertDateId}/seats:
+  /concerts/{concertId}/dates:
     get:
       tags: [Concert]
-      summary: 특정 날짜의 좌석 목록 조회(1~50)
+      summary: 콘서트 날짜(회차) 목록 조회
       parameters:
-        - in: path
-          name: concertDateId
+        - name: concertId
+          in: path
           required: true
           schema:
             type: integer
-            format: int64
       responses:
         "200":
+          description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SeatsResponse"
+                $ref: "#/components/schemas/ConcertDateListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
-  /api/v1/reservations:
+  /concert-dates/{concertDateId}/seats:
+    get:
+      tags: [Seat]
+      summary: 좌석 목록 조회
+      parameters:
+        - name: concertDateId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /concert-dates/{concertDateId}/seats/{seatNo}/hold:
+    post:
+      tags: [Seat]
+      summary: 좌석 임시 배정(HOLD)
+      description: >
+        좌석을 AVAILABLE 상태에서 HELD로 변경한다.
+        조건부 UPDATE(AVAILABLE일 때만 변경)를 기본 전략으로 하여 동시성 충돌을 방지한다.
+        토큰 만료 또는 HOLD 만료 시 좌석은 다시 AVAILABLE로 복구된다.
+      security:
+        - BearerAuth: []
+        - QueueToken: []
+      parameters:
+        - name: concertDateId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: seatNo
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldSeatRequest"
+            examples:
+              req:
+                value:
+                  holdSeconds: 300
+      responses:
+        "200":
+          description: Seat held
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoldSeatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /reservations:
     post:
       tags: [Reservation]
-      summary: 좌석 예약 요청(임시배정)
-      parameters:
-        - in: header
-          name: X-Queue-Token
-          required: true
-          schema:
-            type: string
+      summary: 예약 생성 (HOLD된 좌석 기반)
+      description: >
+        HELD 상태의 좌석에 대해 예약을 생성한다.
+        만료(expiresAt) 이후에는 예약이 EXPIRED 처리될 수 있다.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReservationCreateRequest"
+              $ref: "#/components/schemas/CreateReservationRequest"
+            examples:
+              req:
+                value:
+                  concertDateId: 10
+                  seatNo: 7
       responses:
         "201":
+          description: Reservation created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReservationCreateResponse"
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
-  /api/v1/users/{userId}/points:
-    get:
-      tags: [Point]
-      summary: 포인트 조회
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PointBalanceResponse"
-
-  /api/v1/users/{userId}/points/charge:
-    post:
-      tags: [Point]
-      summary: 포인트 충전
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PointChargeRequest"
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PointChargeResponse"
-
-  /api/v1/payments:
+  /payments:
     post:
       tags: [Payment]
-      summary: 결제 요청
-      parameters:
-        - in: header
-          name: X-Queue-Token
-          required: true
-          schema:
-            type: string
+      summary: 결제 수행 (예약 확정)
+      description: >
+        예약(reservationId)에 대해 결제를 수행하고,
+        성공 시 예약은 PAID, 좌석은 CONFIRMED로 확정된다.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PaymentRequest"
+              $ref: "#/components/schemas/PayRequest"
+            examples:
+              req:
+                value:
+                  reservationId: 100
+                  amount: 5000
       responses:
-        "201":
+        "200":
+          description: Payment success
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaymentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
 components:
-  schemas:
-    QueueTokenIssueRequest:
-      type: object
-      required: [userId]
-      properties:
-        userId:
-          type: string
-          example: "user_1001"
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    QueueToken:
+      type: apiKey
+      in: header
+      name: X-Queue-Token
 
-    QueueTokenIssueResponse:
+  responses:
+    BadRequest:
+      description: 잘못된 요청
+      content:
+        application/json:
+          examples:
+            invalidParam:
+              value:
+                code: BAD_REQUEST
+                message: Invalid request parameter
+
+    Unauthorized:
+      description: 인증 실패
+      content:
+        application/json:
+          examples:
+            noAuth:
+              value:
+                code: UNAUTHORIZED
+                message: Authentication required
+
+    Forbidden:
+      description: 권한 없음
+      content:
+        application/json:
+          examples:
+            forbidden:
+              value:
+                code: FORBIDDEN
+                message: Access denied
+
+    NotFound:
+      description: 리소스 없음
+      content:
+        application/json:
+          examples:
+            notFound:
+              value:
+                code: NOT_FOUND
+                message: Resource not found
+
+    Conflict:
+      description: 리소스 충돌
+      content:
+        application/json:
+          examples:
+            seatConflict:
+              value:
+                code: CONFLICT
+                message: Seat already reserved
+
+    TooManyRequests:
+      description: 요청 제한(레이트 리밋/대기열 제한)
+      content:
+        application/json:
+          examples:
+            rateLimit:
+              value:
+                code: TOO_MANY_REQUESTS
+                message: Too many requests
+
+  schemas:
+    ErrorResponse:
       type: object
-      required: [token, issuedAt]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+
+    QueueTokenResponse:
+      type: object
       properties:
         token:
           type: string
-        issuedAt:
+          description: 대기열 통과 후 발급되는 토큰
+        expiresAt:
           type: string
           format: date-time
+          description: 토큰 만료 시각(UTC)
+      required: [token, expiresAt]
 
     QueueStatusResponse:
       type: object
-      required: [active, userId]
       properties:
-        active:
-          type: boolean
-        position:
-          type: integer
-          nullable: true
-        userId:
+        status:
           type: string
-          example: "user_1001"
-
-    ConcertDatesResponse:
-      type: object
-      required: [concertId, dates]
-      properties:
-        concertId:
+          description: WAITING 또는 ACTIVE
+          enum: [WAITING, ACTIVE]
+        rank:
           type: integer
-        dates:
+          description: WAITING 상태에서의 순번(0부터 시작 또는 1부터 시작은 구현 정책에 따름)
+        estimatedWaitSeconds:
+          type: integer
+          description: 예상 대기 시간(초). 선택값.
+        activeExpiresAt:
+          type: string
+          format: date-time
+          description: ACTIVE 상태 만료 시각(UTC). 선택값.
+      required: [status]
+
+    ConcertListResponse:
+      type: object
+      properties:
+        concerts:
           type: array
           items:
-            $ref: "#/components/schemas/ConcertDateItem"
+            $ref: "#/components/schemas/Concert"
+      required: [concerts]
 
-    ConcertDateItem:
+    Concert:
       type: object
-      required: [concertDateId, date]
       properties:
-        concertDateId:
+        id:
+          type: integer
+        title:
+          type: string
+      required: [id, title]
+
+    ConcertDateListResponse:
+      type: object
+      properties:
+        concertDates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConcertDate"
+      required: [concertDates]
+
+    ConcertDate:
+      type: object
+      properties:
+        id:
+          type: integer
+        concertId:
           type: integer
         date:
           type: string
           format: date
+      required: [id, concertId, date]
 
-    SeatsResponse:
+    SeatListResponse:
       type: object
-      required: [concertDateId, seats]
       properties:
-        concertDateId:
-          type: integer
         seats:
           type: array
           items:
-            $ref: "#/components/schemas/SeatItem"
+            $ref: "#/components/schemas/Seat"
+      required: [seats]
 
-    SeatItem:
+    Seat:
       type: object
-      required: [seatNo, status]
       properties:
         seatNo:
           type: integer
+          minimum: 1
+          maximum: 50
         status:
           type: string
           enum: [AVAILABLE, HELD, CONFIRMED]
-        holdExpiresAt:
-          type: string
-          format: date-time
-          nullable: true
-        heldByUserId:
-          type: string
-          nullable: true
-          example: "user_1001"
+      required: [seatNo, status]
 
-    ReservationCreateRequest:
+    HoldSeatRequest:
       type: object
-      required: [userId, concertDateId, seatNo]
       properties:
-        userId:
-          type: string
-          example: "user_1001"
+        holdSeconds:
+          type: integer
+          minimum: 30
+          maximum: 600
+          description: 임시배정 유지 시간(초)
+      required: [holdSeconds]
+
+    HoldSeatResponse:
+      type: object
+      properties:
         concertDateId:
           type: integer
         seatNo:
-          type: integer
-
-    ReservationCreateResponse:
-      type: object
-      required: [reservationId, status, expiresAt]
-      properties:
-        reservationId:
           type: integer
         status:
           type: string
           enum: [HELD]
+        holdExpiresAt:
+          type: string
+          format: date-time
+          description: 임시배정 만료 시각(UTC)
+      required: [concertDateId, seatNo, status, holdExpiresAt]
+
+    CreateReservationRequest:
+      type: object
+      properties:
+        concertDateId:
+          type: integer
+        seatNo:
+          type: integer
+          minimum: 1
+          maximum: 50
+      required: [concertDateId, seatNo]
+
+    ReservationResponse:
+      type: object
+      properties:
+        reservationId:
+          type: integer
+        userId:
+          type: string
+          description: 사용자 ID (string)
+        concertDateId:
+          type: integer
+        seatNo:
+          type: integer
+        status:
+          type: string
+          enum: [HELD, PAID, EXPIRED, CANCELED]
         expiresAt:
           type: string
           format: date-time
+          description: 예약 만료 시각(UTC)
+      required: [reservationId, userId, concertDateId, seatNo, status, expiresAt]
 
-    PointBalanceResponse:
+    PayRequest:
       type: object
-      required: [userId, balance]
       properties:
-        userId:
-          type: string
-          example: "user_1001"
-        balance:
-          type: integer
-
-    PointChargeRequest:
-      type: object
-      required: [amount]
-      properties:
-        amount:
-          type: integer
-
-    PointChargeResponse:
-      type: object
-      required: [userId, balance]
-      properties:
-        userId:
-          type: string
-        balance:
-          type: integer
-
-    PaymentRequest:
-      type: object
-      required: [userId, reservationId]
-      properties:
-        userId:
-          type: string
         reservationId:
           type: integer
+        amount:
+          type: integer
+          minimum: 0
+      required: [reservationId, amount]
 
     PaymentResponse:
       type: object
-      required: [paymentId, reservationId, amount, paidAt]
       properties:
         paymentId:
           type: integer
@@ -335,3 +519,4 @@ components:
         paidAt:
           type: string
           format: date-time
+      required: [paymentId, reservationId, amount, paidAt]
