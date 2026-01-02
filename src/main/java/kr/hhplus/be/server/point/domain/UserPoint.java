@@ -32,7 +32,7 @@ public class UserPoint {
         this.balance = balance;
     }
 
-    public String uerId() { return userId; }
+    public String userId() { return userId; }
     public long balance() { return balance; }
 
     public void charge(long amount) {

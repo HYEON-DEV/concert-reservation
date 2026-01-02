@@ -1,3 +1,5 @@
+import org.gradle.api.internal.plugins.StartScriptTemplateBindingFactory.unix
+
 plugins {
 	java
 	id("org.springframework.boot") version "3.4.1"
@@ -56,4 +58,12 @@ dependencies {
 tasks.withType<Test> {
 	useJUnitPlatform()
 	systemProperty("user.timezone", "UTC")
+
+//    environment("DOCKER_HOST", "unix:///Users/okestro/.rd/docker.sock")
+    systemProperty("DOCKER_HOST", "unix:///Users/okestro/.rd/docker.sock")
+
+    environment("DOCKER_HOST", "unix:///Users/okestro/.rd/docker.sock")
+//    environment("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/Users/okestro/.rd/docker.sock")
+//    environment("TESTCONTAINERS_HOST_OVERRIDE", "localhost")
+    environment("TESTCONTAINERS_RYUK_DISABLED", "true")
 }
