@@ -21,11 +21,7 @@ public class PointService {
 
     @Transactional
     public long charge(String userId, long amount) {
-        UserPoint point = repo.findByUserIdForUpdate(userId)
-            .orElseGet(() -> repo.save(new UserPoint(userId, 0L)));
-
-        point.charge(amount);
-        // dirty checking으로 저장됨
-        return point.balance();
+        repo.upsertCharge(userId, amount);
+        return repo.findById(userId).orElseThrow().balance();
     }
 }
