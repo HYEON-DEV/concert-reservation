@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.Instant;
 import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -41,20 +42,66 @@ public class ConcertSeat {
     @Column(nullable = false)
     private SeatStatus status;
 
-    public ConcertSeat(Long performanceId, int seatNo, SeatStatus status) {
+    @Column(name = "hold_user_id", length = 64)
+    private String holdUserId;
+
+    @Column(name = "hold_until", columnDefinition = "DATETIME(3)")
+    private Instant holdUntil;
+
+    public ConcertSeat(Long performanceId, int seatNo) {
         this.performanceId = Objects.requireNonNull(performanceId);
         if (seatNo < 1 || seatNo > 50)
             throw new IllegalArgumentException("seatNo must be 1~50");
         this.seatNo = seatNo;
-        this.status = Objects.requireNonNull(status);
+        this.status = SeatStatus.AVAILABLE;
     }
 
     public Long id() { return id; }
     public Long performanceId() { return performanceId; }
     public int seatNo() { return seatNo; }
     public SeatStatus status() { return status; }
+    public String holdUserId() { return holdUserId; }
+    public Instant holdUntil() { return holdUntil; }
 
-    public void markHold() { this.status = SeatStatus.HOLD; }
-    public void markReserved() { this.status = SeatStatus.RESERVED; }
-    public void markAvailable() { this.status = SeatStatus.AVAILABLE; }
+    public boolean isHoldExpired(Instant now) {
+        return status == SeatStatus.HOLD && holdUntil != null && now.isAfter(holdUntil);
+    }
+
+    public void releaseIfExpired(Instant now) {
+        if (isHoldExpired(now)) release();
+    }
+
+//    public boolean canBeHeldBy(String userId, Instant now) {
+//        if (status == SeatStatus.AVAILABLE) return true;
+//
+//        if (status == SeatStatus.HOLD) {
+//            // 만료됐으면 누구나 점유 가능
+//            if (isHoldExpired(now)) return true;
+//            // 만료 전이면 hold한 사람만
+//            return Objects.equals(holdUserId, userId);
+//        }
+//        return false; // RESERVED면 불가
+//    }
+
+    public void hold(String userId, Instant until) {
+        if (status == SeatStatus.RESERVED) throw new IllegalStateException("seat already reserved");
+        this.status = SeatStatus.HOLD;
+        this.holdUserId = Objects.requireNonNull(userId);
+        this.holdUntil = Objects.requireNonNull(until);
+    }
+
+    public void reserve(String userId) {
+        if (status == SeatStatus.RESERVED) throw new IllegalStateException("seat already reserved");
+        if (status != SeatStatus.HOLD) throw new IllegalStateException("seat is not held");
+        if (!Objects.equals(this.holdUserId, userId)) throw new IllegalStateException("not seat holder");
+        this.status = SeatStatus.RESERVED;
+        this.holdUserId = null;
+        this.holdUntil = null;
+    }
+
+    public void release() {
+        this.status = SeatStatus.AVAILABLE;
+        this.holdUserId = null;
+        this.holdUntil = null;
+    }
 }

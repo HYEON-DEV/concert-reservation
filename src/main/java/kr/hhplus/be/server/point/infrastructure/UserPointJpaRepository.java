@@ -21,6 +21,16 @@ public interface UserPointJpaRepository extends JpaRepository<UserPoint, String>
     """, nativeQuery = true)
     void upsertCharge(@Param("userId") String userId, @Param("amount") long amount);
 
+    @Modifying
+    @Query(value = """
+        UPDATE user_point
+        SET balance = balance - :amount
+            version = version + 1
+        WHERE user_id = :userId
+            AND balance >= :amount
+    """, nativeQuery = true)
+    int decreaseIfEnough(@Param("userId") String userId, @Param("amount") long amount);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from UserPoint p where p.userId = :userId")
     Optional<UserPoint> findByUserIdForUpdate(@Param("userId") String userId);

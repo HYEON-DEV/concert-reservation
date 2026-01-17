@@ -21,7 +21,18 @@ public class PointService {
 
     @Transactional
     public long charge(String userId, long amount) {
+        if (amount <= 0) throw new IllegalArgumentException("amount must be positive");
         repo.upsertCharge(userId, amount);
         return repo.findById(userId).orElseThrow().balance();
     }
+
+    @Transactional
+    public void use(String userId, long amount) {
+        if (amount <= 0) throw new IllegalArgumentException("amount must be positive");
+
+        int updated = repo.decreaseIfEnough(userId, amount);
+
+        if (updated == 0) throw new IllegalStateException("not enough point");
+    }
 }
+
