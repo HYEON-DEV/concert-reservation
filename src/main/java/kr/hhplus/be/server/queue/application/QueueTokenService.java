@@ -1,54 +1,76 @@
 package kr.hhplus.be.server.queue.application;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
+import kr.hhplus.be.server.queue.domain.QueueStatus;
 import kr.hhplus.be.server.queue.domain.QueueToken;
-import kr.hhplus.be.server.queue.infrastructure.QueueTokenJpaRepository;
+import kr.hhplus.be.server.queue.infrastructure.RedisQueueRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
 @Service
 public class QueueTokenService {
 
-    private static final int MAX_ACTIVE_USERS = 100;
+    private static final int ACTIVE_LIMIT = 100;
     private static final Duration TOKEN_TTL = Duration.ofMinutes(10);
 
-    private final QueueTokenJpaRepository repo;
+    private final RedisQueueRepository redisQueueRepo;
+    private final Clock clock;
 
-    @Transactional
     public QueueToken issue(String userId) {
-        Instant now = Instant.now();
+        Instant now = Instant.now(clock);
 
-        long activeCount = repo.countActiveTokens(now);
-        if (activeCount >= MAX_ACTIVE_USERS) {
-            throw new IllegalStateException("Queue is full");
+        var existing = redisQueueRepo.findTokenByUserId(userId);
+        if (existing.isPresent()) {
+            return statusOf(existing.get(), userId, now);
         }
 
-        QueueToken token = new QueueToken(
-            userId, now, now.plus(TOKEN_TTL));
+        String token = UUID.randomUUID().toString();
+        redisQueueRepo.saveToken(userId, token, TOKEN_TTL);
+        redisQueueRepo.enqueue(token, now);
 
-        return repo.save(token);
+        return statusOf(token, userId, now);
     }
 
-    @Transactional(readOnly = true)
-    public QueueToken validate(String tokenValue) {
-        QueueToken token = repo.findByToken(tokenValue)
-            .orElseThrow(() -> new IllegalArgumentException("Invalid token"));
+    public QueueToken me(String token) {
+        Instant now = Instant.now(clock);
 
-        if (token.isExpired(Instant.now())) {
-            throw new IllegalStateException("Token is expired");
+        String userId = redisQueueRepo.findUserIdByToken(token)
+            .orElseThrow(() -> new IllegalArgumentException("invalid or expired token"));
+
+        return statusOf(token, userId, now);
+    }
+
+    public void validate(String token) {
+        QueueToken me = me(token);
+        if (me.status() != QueueStatus.ACTIVE) {
+            throw new IllegalStateException("not active in queue");
+        }
+    }
+
+    public void expire(String token) {
+        String userId = redisQueueRepo.findUserIdByToken(token)
+            .orElseThrow(() -> new IllegalArgumentException("invalid or expired token"));
+        redisQueueRepo.removeToken(token, userId);
+    }
+
+    private QueueToken statusOf(String token, String userId, Instant now) {
+        long rank = redisQueueRepo.getRank(token);
+        if (rank == -1) {
+            // ZSET 에서 없어졌거나 TTL로 키가 날아간 케이스
+            return new QueueToken(token, userId, QueueStatus.EXPIRED,
+                -1, redisQueueRepo.getSize(), now, now);
         }
 
-        return token;
-    }
+        long total = redisQueueRepo.getSize();
 
-    @Transactional
-    public void expire(String tokenValue) {
-        QueueToken token = repo.findByToken(tokenValue)
-            .orElseThrow(() -> new IllegalArgumentException("Invalid token"));
+        QueueStatus status = rank <= ACTIVE_LIMIT ? QueueStatus.ACTIVE : QueueStatus.WAITING;
 
-        token.expire();
+        Instant expiresAt = now.plus(TOKEN_TTL);
+
+        return new QueueToken(token, userId, status, rank, total, now, expiresAt);
     }
 }
