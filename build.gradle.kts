@@ -1,3 +1,5 @@
+import org.gradle.api.internal.plugins.StartScriptTemplateBindingFactory.unix
+
 plugins {
 	java
 	id("org.springframework.boot") version "3.4.1"
@@ -30,6 +32,13 @@ dependencyManagement {
 }
 
 dependencies {
+    // Lombok
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
+
+    testCompileOnly("org.projectlombok:lombok")
+    testAnnotationProcessor("org.projectlombok:lombok")
+
     // Spring
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -37,6 +46,9 @@ dependencies {
 
     // DB
 	runtimeOnly("com.mysql:mysql-connector-j")
+
+    // Redis
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -49,4 +61,7 @@ dependencies {
 tasks.withType<Test> {
 	useJUnitPlatform()
 	systemProperty("user.timezone", "UTC")
+
+    environment("DOCKER_HOST", "unix:///Users/okestro/.rd/docker.sock")
+    environment("TESTCONTAINERS_RYUK_DISABLED", "true")
 }
