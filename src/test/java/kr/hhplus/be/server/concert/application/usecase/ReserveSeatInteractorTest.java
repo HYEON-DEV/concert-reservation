@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import java.time.*;
 import java.util.Optional;
+import kr.hhplus.be.server.concert.application.port.SeatHoldPort;
 import kr.hhplus.be.server.concert.application.port.SeatPort;
 import kr.hhplus.be.server.concert.domain.ConcertSeat;
 import org.junit.jupiter.api.*;
@@ -13,6 +14,8 @@ import org.mockito.*;
 class ReserveSeatInteractorTest {
 
     @Mock SeatPort seatPort;
+    @Mock SeatHoldPort seatHoldPort;
+
     Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
     @InjectMocks ReserveSeatInteractor interactor;
@@ -20,7 +23,7 @@ class ReserveSeatInteractorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        interactor = new ReserveSeatInteractor(seatPort, clock);
+        interactor = new ReserveSeatInteractor(seatPort, seatHoldPort, clock);
     }
 
     @Test
