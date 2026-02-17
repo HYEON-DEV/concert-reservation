@@ -6,6 +6,7 @@ import java.util.Optional;
 import kr.hhplus.be.server.concert.domain.ConcertSeat;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -23,4 +24,15 @@ public interface ConcertSeatJpaRepository extends JpaRepository<ConcertSeat, Lon
         @Param("performanceId") Long performanceId,
         @Param("seatNo") int seatNo
     );
+
+    @Modifying
+    @Query(value = """
+        UPDATE concert_seat
+        SET status = 'AVAILABLE',
+            hold_user_id = NULL,
+            hold_until = NULL
+        WHERE status = 'HOLD'
+          AND hold_until <= :now
+    """, nativeQuery = true)
+    int releaseExpiredHolds(@Param("now") java.time.Instant now);
 }

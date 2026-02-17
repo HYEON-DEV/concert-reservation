@@ -29,3 +29,7 @@ spring:
     url: jdbc:mysql://localhost:3307/hhplus?characterEncoding=UTF-8&serverTimezone=UTC
     username: root
     password: 1234
+
+app:
+  seat-hold:
+    cleanup-delay-ms: 5000
