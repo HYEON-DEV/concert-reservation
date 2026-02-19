@@ -33,3 +33,8 @@ spring:
 app:
   seat-hold:
     cleanup-delay-ms: 5000
+  lock:
+    user-point:
+      ttl-ms: 3000
+      wait-ms: 2000
+      retry-ms: 50
