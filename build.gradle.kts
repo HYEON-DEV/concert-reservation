@@ -61,7 +61,15 @@ dependencies {
 tasks.withType<Test> {
 	useJUnitPlatform()
 	systemProperty("user.timezone", "UTC")
+    systemProperty("docker.api.version", "1.52")
 
-    environment("DOCKER_HOST", "unix:///Users/okestro/.rd/docker.sock")
+    // Prevent stale API pinning (e.g., 1.32) from breaking Testcontainers.
+    environment.remove("DOCKER_API_VERSION")
+    environment("DOCKER_API_VERSION", "1.52")
+
+    val rdSocketPath = "${System.getProperty("user.home")}/.rd/docker.sock"
+    if (file(rdSocketPath).exists()) {
+        environment("DOCKER_HOST", "unix://$rdSocketPath")
+    }
     environment("TESTCONTAINERS_RYUK_DISABLED", "true")
 }
