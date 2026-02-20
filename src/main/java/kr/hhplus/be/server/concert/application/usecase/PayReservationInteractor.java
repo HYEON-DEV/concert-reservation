@@ -8,7 +8,9 @@ import kr.hhplus.be.server.concert.application.port.SeatHoldPort;
 import kr.hhplus.be.server.concert.application.port.SeatPort;
 import kr.hhplus.be.server.concert.domain.ConcertSeat;
 import kr.hhplus.be.server.concert.domain.SeatStatus;
+import kr.hhplus.be.server.ranking.application.RankingEventPublisher;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,9 +21,11 @@ public class PayReservationInteractor implements PayReservationUseCase{
     private final PointPort pointPort;
     private final PaymentPort paymentPort;
     private final SeatHoldPort seatHoldPort;
+    private final RankingEventPublisher rankingEventPublisher;
     private final Clock clock;
 
     @Transactional
+    @CacheEvict(cacheNames = "concert:seats", key = "#command.performanceId()")
     @Override
     public Result pay(Command command) {
         if (command.amount() <= 0) throw new IllegalArgumentException("amount must be positive");
@@ -55,6 +59,7 @@ public class PayReservationInteractor implements PayReservationUseCase{
         seat.reserve(command.userId());
         seatPort.save(seat);
         seatHoldPort.release(command.performanceId(), command.seatNo(), command.userId());
+        rankingEventPublisher.publishPaymentCompleted(command.performanceId(), now);
 
         return new Result(seat.performanceId(), seat.seatNo(), seat.status().name());
     }
