@@ -1,6 +1,7 @@
 package kr.hhplus.be.server.point.interfaces;
 
 import kr.hhplus.be.server.point.application.PointService;
+import kr.hhplus.be.server.point.application.usecase.ChargePointUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/points")
 public class PointController {
     private final PointService pointService;
+    private final ChargePointUseCase chargePointUseCase;
 
     // HTTP 요청/응답 DTO
     public record ChargeRequest(String userId, long amount){}
@@ -28,7 +30,7 @@ public class PointController {
 
     @PostMapping("/charge")
     public ResponseEntity<PointResponse> charge(@RequestBody ChargeRequest req) {
-        long balance = pointService.charge(req.userId(), req.amount());
+        long balance = chargePointUseCase.charge(req.userId(), req.amount());
         return ResponseEntity.ok(new PointResponse(req.userId(), balance));
     }
 }

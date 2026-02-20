@@ -1,7 +1,7 @@
 package kr.hhplus.be.server.concert.infrastructure;
 
 import kr.hhplus.be.server.concert.application.port.PointPort;
-import kr.hhplus.be.server.point.application.PointService;
+import kr.hhplus.be.server.point.application.usecase.UsePointUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -9,10 +9,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class PointServiceAdapter implements PointPort {
 
-    private final PointService pointService;
+    private final UsePointUseCase usePointUseCase;
 
     @Override
     public void usePoint(String userId, long amount) {
-        pointService.use(userId, amount);
+        usePointUseCase.use(userId, amount);
     }
 }
