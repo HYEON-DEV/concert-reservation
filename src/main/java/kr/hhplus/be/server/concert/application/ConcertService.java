@@ -5,6 +5,7 @@ import java.util.List;
 import kr.hhplus.be.server.concert.infrastructure.ConcertPerformanceJpaRepository;
 import kr.hhplus.be.server.concert.infrastructure.ConcertSeatJpaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ public class ConcertService {
     private final ConcertSeatJpaRepository seatRepo;
 
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "concert:performances", key = "#concertId")
     public List<PerformanceDto> getPerformances(Long concertId) {
         return performanceRepo.findAllByConcertIdOrderByStartAtAsc(concertId).stream()
             .map(p -> new PerformanceDto(p.id(), p.startAt()))
@@ -23,6 +25,7 @@ public class ConcertService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "concert:seats", key = "#performanceId")
     public List<SeatDto> getSeats(Long performanceId) {
         return seatRepo.findAllByPerformanceIdOrderBySeatNoAsc(performanceId).stream()
             .map(s -> new SeatDto(s.seatNo(), s.status().name()))
