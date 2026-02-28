@@ -2,13 +2,14 @@ package kr.hhplus.be.server.concert.application.usecase;
 
 import java.time.Clock;
 import java.time.Instant;
+import kr.hhplus.be.server.concert.application.event.ReservationCompletedEvent;
 import kr.hhplus.be.server.concert.application.port.PaymentPort;
 import kr.hhplus.be.server.concert.application.port.PointPort;
+import kr.hhplus.be.server.concert.application.port.ReservationEventPort;
 import kr.hhplus.be.server.concert.application.port.SeatHoldPort;
 import kr.hhplus.be.server.concert.application.port.SeatPort;
 import kr.hhplus.be.server.concert.domain.ConcertSeat;
 import kr.hhplus.be.server.concert.domain.SeatStatus;
-import kr.hhplus.be.server.ranking.application.RankingEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ public class PayReservationInteractor implements PayReservationUseCase{
     private final PointPort pointPort;
     private final PaymentPort paymentPort;
     private final SeatHoldPort seatHoldPort;
-    private final RankingEventPublisher rankingEventPublisher;
+    private final ReservationEventPort reservationEventPort;
     private final Clock clock;
 
     @Transactional
@@ -59,7 +60,15 @@ public class PayReservationInteractor implements PayReservationUseCase{
         seat.reserve(command.userId());
         seatPort.save(seat);
         seatHoldPort.release(command.performanceId(), command.seatNo(), command.userId());
-        rankingEventPublisher.publishPaymentCompleted(command.performanceId(), now);
+        reservationEventPort.publishReservationCompleted(
+            new ReservationCompletedEvent(
+                command.userId(),
+                command.performanceId(),
+                command.seatNo(),
+                command.amount(),
+                now
+            )
+        );
 
         return new Result(seat.performanceId(), seat.seatNo(), seat.status().name());
     }
