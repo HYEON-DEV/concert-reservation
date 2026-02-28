@@ -13,6 +13,7 @@ import kr.hhplus.be.server.concert.application.port.SeatHoldPort;
 import kr.hhplus.be.server.concert.application.port.SeatPort;
 import kr.hhplus.be.server.concert.application.usecase.PayReservationUseCase.Command;
 import kr.hhplus.be.server.concert.domain.ConcertSeat;
+import kr.hhplus.be.server.ranking.application.RankingEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ class PayReservationInteractorTest {
     @Mock PointPort pointPort;
     @Mock PaymentPort paymentPort;
     @Mock SeatHoldPort seatHoldPort;
+    @Mock RankingEventPublisher rankingEventPublisher;
 
     Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
@@ -33,7 +35,8 @@ class PayReservationInteractorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        interactor = new PayReservationInteractor(seatPort, pointPort, paymentPort, seatHoldPort, clock);
+        interactor = new PayReservationInteractor(
+            seatPort, pointPort, paymentPort, seatHoldPort, rankingEventPublisher, clock);
     }
 
     @Test
@@ -57,6 +60,7 @@ class PayReservationInteractorTest {
 
         verify(pointPort).usePoint("u1", 1000);
         verify(paymentPort).record(eq("u1"), eq(1L), eq(1), eq(1000L), any());
+        verify(rankingEventPublisher).publishPaymentCompleted(eq(1L), any());
         verify(seatPort).save(seat);
         verify(seatHoldPort).release(1L, 1, "u1");
     }

@@ -8,6 +8,7 @@ import kr.hhplus.be.server.concert.application.port.SeatPort;
 import kr.hhplus.be.server.concert.domain.ConcertSeat;
 import kr.hhplus.be.server.concert.domain.SeatStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ public class ReserveSeatInteractor implements ReserveSeatUseCase{
 
 
     @Transactional
+    @CacheEvict(cacheNames = "concert:seats", key = "#command.performanceId()")
     @Override
     public Result reserve(Command command) {
         // Redis 선점 (동시성 차단)
