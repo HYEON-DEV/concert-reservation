@@ -29,6 +29,14 @@ spring:
     url: jdbc:mysql://localhost:3307/hhplus?characterEncoding=UTF-8&serverTimezone=UTC
     username: root
     password: 1234
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: concert-data-platform
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual_immediate
 
 app:
   seat-hold:
@@ -38,3 +46,6 @@ app:
       ttl-ms: 3000
       wait-ms: 2000
       retry-ms: 50
+  kafka:
+    topics:
+      reservation-completed: concert.reservation.completed.v1
